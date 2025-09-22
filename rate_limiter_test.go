@@ -130,6 +130,43 @@ func TestGetClientIP_MultiXForwardedFor(t *testing.T) {
 	assert.Equal("203.0.113.5", ip)
 }
 
+func TestGetClientIP_MalformedRemoteAddrReturnsEmpty(t *testing.T) {
+	assert := a.New(t)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	// malformed RemoteAddr should result in empty parse
+	req.RemoteAddr = "::% 0"
+
+	// direct call to getClientIP should return empty
+	got := getClientIP(req, "")
+	assert.Equal("", got)
+
+	// middleware should reject when it cannot determine client IP
+	middleware, err := RateLimitMiddleware(RateLimiterConfig{RequestsPerMinute: 100, Context: context.Background(), TrustedProxyHeader: ""})
+	assert.NoError(err)
+
+	rw := httptest.NewRecorder()
+	called := false
+	middleware(rw, req, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})
+
+	assert.False(called)
+	assert.Equal(400, rw.Code)
+}
+
+func TestGetClientIP_HeaderBracketedIPv6WithPort(t *testing.T) {
+	assert := a.New(t)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("X-Forwarded-For", "[2001:db8::1]:443")
+	// simulate missing RemoteAddr as in the fuzz seed
+	req.RemoteAddr = ""
+
+	ip := getClientIP(req, "X-Forwarded-For")
+	assert.Equal("2001:db8::1", ip)
+}
+
 func TestControlCharHeaderMiddleware(t *testing.T) {
 	assert := a.New(t)
 

@@ -266,8 +266,21 @@ func getClientIP(r *http.Request, trustedHeader string) string {
 		}
 	}
 
-	// As a last resort, use RemoteAddr (strip port if present)
-	return stripPort(r.RemoteAddr)
+	// As a last resort, use RemoteAddr (strip port if present). Validate and
+	// normalize the host portion — return a parsed IP string or empty if the
+	// RemoteAddr does not contain a valid IP. This prevents returning raw
+	// malformed tokens to callers.
+	host := trimSpace(stripPort(r.RemoteAddr))
+	if parsed := parseIP(host); parsed != "" {
+		// Defensive validation: parsed result should not contain spaces,
+		// commas or ASCII control characters. If it does, consider it
+		// untrusted and return empty so callers enforce policy.
+		if strings.ContainsAny(parsed, " \n\r\t") || strings.Contains(parsed, ",") {
+			return ""
+		}
+		return parsed
+	}
+	return ""
 }
 
 // splitAndTrim splits s by sep and trims spaces from each part.
