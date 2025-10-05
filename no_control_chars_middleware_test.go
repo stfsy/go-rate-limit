@@ -97,7 +97,7 @@ func TestControlCharHeaderMiddleware_API_Token_StrictASCII(t *testing.T) {
 	rw := httptest.NewRecorder()
 	called := false
 
-	mw := ControlCharHeaderMiddleware("X-Api-Token")
+	mw := TokenHeaderMiddleware("X-Api-Token")
 	mw(rw, req, func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
@@ -207,7 +207,7 @@ func TestControlCharHeaderMiddleware_AcceptsExampleToken(t *testing.T) {
 	rw := httptest.NewRecorder()
 	called := false
 
-	mw := ControlCharHeaderMiddleware("X-Api-Token")
+	mw := TokenHeaderMiddleware("X-Api-Token")
 	mw(rw, req, func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
@@ -225,7 +225,7 @@ func TestControlCharHeaderMiddleware_RejectsSpace(t *testing.T) {
 	rw := httptest.NewRecorder()
 	called := false
 
-	mw := ControlCharHeaderMiddleware("X-Api-Token")
+	mw := TokenHeaderMiddleware("X-Api-Token")
 	mw(rw, req, func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
