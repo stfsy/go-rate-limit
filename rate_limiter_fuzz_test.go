@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -29,21 +30,28 @@ func FuzzGetClientIP(f *testing.F) {
 			req.Header.Set(headerName, headerValue)
 		}
 		req.RemoteAddr = remoteAddr
+		rl, err := NewRateLimiter(context.Background(), 100)
+		if err != nil {
+			t.Fatalf("failed to create rate limiter: %v", err)
+		}
+		// keep cap moderate for fuzzing
+		rl.maxClients = 200
 
-		out := getClientIP(req, headerName)
+		out := rl.getClientIP(req, headerName)
+		fmt.Printf("FuzzGetClientIP output: %q\n", out)
 
 		// Skip clearly malformed outputs (these are not useful fuzz findings)
 		if out == "" {
-			t.Skipf("empty client IP for header=%q value=%q remote=%q", headerName, headerValue, remoteAddr)
+			t.Skipf("empty client IP for header=%q value=%q remoteAddr=%q", headerName, headerValue, remoteAddr)
 		}
 		if strings.Contains(out, ",") {
-			t.Fatalf("returned IP contains comma: %q", out)
+			t.Fatalf("returned IP contains comma -> \"%q\" for input %s", out, remoteAddr)
 		}
 		if strings.ContainsAny(out, "\n\r\t") {
-			t.Fatalf("returned IP contains control chars: %q", out)
+			t.Fatalf("returned IP contains control chars -> \"%q\" for input %s", out, remoteAddr)
 		}
 		if strings.Contains(out, " ") {
-			t.Fatalf("returned IP contains space: %q", out)
+			t.Fatalf("returned IP contains space -> \"%q\" for remoteAddr:'%s' headerKey:'%s' headerValue:'%s'", out, remoteAddr, headerName, headerValue)
 		}
 	})
 }

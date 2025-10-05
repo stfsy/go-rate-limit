@@ -105,40 +105,74 @@ func TestRateLimitMiddleware_Block(t *testing.T) {
 
 func TestGetClientIP(t *testing.T) {
 	assert := a.New(t)
+	limiter, err := NewRateLimiter(context.Background(), 10)
+	assert.NoError(err)
 
 	// Test X-Forwarded-For header
 	req1 := httptest.NewRequest("GET", "/test", nil)
 	req1.Header.Set("X-Forwarded-For", "192.168.1.100")
 	req1.RemoteAddr = "127.0.0.1:12345"
-	assert.Equal("192.168.1.100", getClientIP(req1, "X-Forwarded-For"))
+	assert.Equal("192.168.1.100", limiter.getClientIP(req1, "X-Forwarded-For"))
 
 	// Test fallback to RemoteAddr
 	req3 := httptest.NewRequest("GET", "/test", nil)
 	req3.RemoteAddr = "192.168.0.1:8080"
-	assert.Equal("192.168.0.1", getClientIP(req3, ""))
+	assert.Equal("192.168.0.1", limiter.getClientIP(req3, ""))
 }
 
 func TestGetClientIP_MultiXForwardedFor(t *testing.T) {
 	assert := a.New(t)
+	limiter, err := NewRateLimiter(context.Background(), 10)
+	assert.NoError(err)
 
 	// Multiple IPs in X-Forwarded-For: left-most should be chosen
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.5, 198.51.100.7, 192.0.2.1")
 	req.RemoteAddr = "10.0.0.1:34567"
 
-	ip := getClientIP(req, "X-Forwarded-For")
+	ip := limiter.getClientIP(req, "X-Forwarded-For")
 	assert.Equal("203.0.113.5", ip)
 }
 
 func TestGetClientIP_MalformedRemoteAddrReturnsEmpty(t *testing.T) {
 	assert := a.New(t)
+	limiter, err := NewRateLimiter(context.Background(), 10)
+	assert.NoError(err)
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	// malformed RemoteAddr should result in empty parse
 	req.RemoteAddr = "::% 0"
 
 	// direct call to getClientIP should return empty
-	got := getClientIP(req, "")
+	got := limiter.getClientIP(req, "")
+	assert.Equal("", got)
+
+	// middleware should reject when it cannot determine client IP
+	middleware, err := RateLimitMiddleware(RateLimiterConfig{RequestsPerMinute: 100, Context: context.Background(), TrustedProxyHeader: ""})
+	assert.NoError(err)
+
+	rw := httptest.NewRecorder()
+	called := false
+	middleware(rw, req, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})
+
+	assert.False(called)
+	assert.Equal(400, rw.Code)
+}
+
+func TestGetClientIP_MalformedRemoteAddrReturnsEmpty2(t *testing.T) {
+	assert := a.New(t)
+	limiter, err := NewRateLimiter(context.Background(), 10)
+	assert.NoError(err)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	// malformed RemoteAddr should result in empty parse
+	req.RemoteAddr = "0"
+	req.Header.Set("0", "::% 0") // also malformed
+
+	// direct call to getClientIP should return empty
+	got := limiter.getClientIP(req, "")
 	assert.Equal("", got)
 
 	// middleware should reject when it cannot determine client IP
@@ -157,13 +191,15 @@ func TestGetClientIP_MalformedRemoteAddrReturnsEmpty(t *testing.T) {
 
 func TestGetClientIP_HeaderBracketedIPv6WithPort(t *testing.T) {
 	assert := a.New(t)
+	limiter, err := NewRateLimiter(context.Background(), 10)
+	assert.NoError(err)
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Header.Set("X-Forwarded-For", "[2001:db8::1]:443")
 	// simulate missing RemoteAddr as in the fuzz seed
 	req.RemoteAddr = ""
 
-	ip := getClientIP(req, "X-Forwarded-For")
+	ip := limiter.getClientIP(req, "X-Forwarded-For")
 	assert.Equal("2001:db8::1", ip)
 }
 
@@ -299,10 +335,13 @@ func TestParseIP_BracketedIPv6(t *testing.T) {
 
 	// stripPort should remove port and keep bracketed form; parseIP should
 	// normalize to unbracketed address
+	limiter, err := NewRateLimiter(context.Background(), 10)
+	assert.NoError(err)
+
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "[2001:db8::1]:443"
 
-	ip := getClientIP(req, "")
+	ip := limiter.getClientIP(req, "")
 	assert.Equal("2001:db8::1", ip)
 
 	// Ensure the visitor map uses the normalized unbracketed key

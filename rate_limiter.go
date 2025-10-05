@@ -251,7 +251,7 @@ func (rl *RateLimiter) StartCleanup() {
 // getClientIP extracts the client IP address from the request.
 // If trustedHeader is non-empty we will attempt to extract and validate
 // the left-most entry from that header (commonly X-Forwarded-For).
-func getClientIP(r *http.Request, trustedHeader string) string {
+func (rl *RateLimiter) getClientIP(r *http.Request, trustedHeader string) string {
 	// If a trusted header was provided, try using its first IP
 	if trustedHeader != "" {
 		if hv := r.Header.Get(trustedHeader); hv != "" {
@@ -387,7 +387,7 @@ func RateLimitMiddleware(cfg RateLimiterConfig) (func(rw http.ResponseWriter, r 
 	limiter.StartCleanup()
 
 	return func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		clientIP := getClientIP(r, cfg.TrustedProxyHeader)
+		clientIP := limiter.getClientIP(r, cfg.TrustedProxyHeader)
 
 		// If clientIP is empty then we cannot reliably rate-limit the request.
 		// Reject the request rather than treating it as a shared/empty key.
