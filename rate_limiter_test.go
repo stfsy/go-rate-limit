@@ -51,7 +51,7 @@ func TestRateLimiter_TokenRefresh(t *testing.T) {
 	assert.True(limiter.Allow("127.0.0.1"))
 }
 
-func TestRateLimitMiddleware_Allow(t *testing.T) {
+func TestRateLimitMiddleware_DoNotFallbackToRemoteAddr(t *testing.T) {
 	assert := a.New(t)
 
 	req := httptest.NewRequest("GET", "/test", nil)
@@ -65,6 +65,24 @@ func TestRateLimitMiddleware_Allow(t *testing.T) {
 		called = true
 	})
 
+	assert.False(called, "Handler should be called when under rate limit")
+	assert.Equal(400, rw.Code)
+}
+
+func TestRateLimitMiddleware_AllowFallbackRemoteAddr(t *testing.T) {
+	assert := a.New(t)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rw := httptest.NewRecorder()
+	called := false
+
+	middleware, err := RateLimitMiddleware(RateLimiterConfig{RequestsPerMinute: 100, Context: context.Background(), TrustedProxyHeader: ""}) // 100 requests per minute
+	assert.NoError(err)
+	middleware(rw, req, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})
+
 	assert.True(called, "Handler should be called when under rate limit")
 	assert.Equal(200, rw.Code)
 }
@@ -72,7 +90,7 @@ func TestRateLimitMiddleware_Allow(t *testing.T) {
 func TestRateLimitMiddleware_Block(t *testing.T) {
 	assert := a.New(t)
 
-	middleware, err := RateLimitMiddleware(RateLimiterConfig{RequestsPerMinute: 1, Context: context.Background(), TrustedProxyHeader: "X-Forwarded-For"}) // Very restrictive: 1 request per minute
+	middleware, err := RateLimitMiddleware(RateLimiterConfig{RequestsPerMinute: 1, Context: context.Background(), TrustedProxyHeader: ""}) // Very restrictive: 1 request per minute
 	assert.NoError(err)
 
 	// First request should pass
@@ -113,6 +131,12 @@ func TestGetClientIP(t *testing.T) {
 	req1.Header.Set("X-Forwarded-For", "192.168.1.100")
 	req1.RemoteAddr = "127.0.0.1:12345"
 	assert.Equal("192.168.1.100", limiter.getClientIP(req1, "X-Forwarded-For"))
+}
+
+func TestGetClientIpFallback(t *testing.T) {
+	assert := a.New(t)
+	limiter, err := NewRateLimiter(context.Background(), 10)
+	assert.NoError(err)
 
 	// Test fallback to RemoteAddr
 	req3 := httptest.NewRequest("GET", "/test", nil)

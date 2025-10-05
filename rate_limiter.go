@@ -264,6 +264,11 @@ func (rl *RateLimiter) getClientIP(r *http.Request, trustedHeader string) string
 				}
 			}
 		}
+		// trusted header was specified but missing or no valid IP found -
+		// do not fall back to RemoteAddr when a trusted header was explicitly
+		// configured: treat this as untrusted and return empty so callers
+		// (middleware) can reject the request.
+		return ""
 	}
 
 	// As a last resort, use RemoteAddr (strip port if present). Validate and
@@ -345,11 +350,27 @@ func parseIP(s string) string {
 	if s == "" {
 		return ""
 	}
+	// Trim surrounding whitespace first.
+	s = strings.TrimSpace(s)
+
+	// Reject inputs containing ASCII control characters or spaces early.
+	if strings.ContainsAny(s, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\v\f\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f ") {
+		return ""
+	}
+
 	// Accept bracketed IPv6 forms ("[::1]") by unwrapping brackets before
 	// attempting to parse. netip.ParseAddr does not accept bracketed forms.
 	if len(s) >= 2 && s[0] == '[' && s[len(s)-1] == ']' {
 		s = s[1 : len(s)-1]
 	}
+
+	// Strip any zone identifier after '%' (e.g. "fe80::1%eth0"). We only
+	// keep the address portion for parsing. If the zone contains unusual
+	// characters (including spaces) it will have been rejected above.
+	if i := strings.IndexByte(s, '%'); i >= 0 {
+		s = s[:i]
+	}
+
 	if addr, err := netip.ParseAddr(s); err == nil {
 		return addr.String()
 	}
