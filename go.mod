@@ -3,7 +3,7 @@ module github.com/stfsy/go-rate-limit
 go 1.26.0
 
 require (
-	github.com/stfsy/go-api-kit v1.14.0
+	github.com/stfsy/go-api-kit v1.15.0
 	github.com/stretchr/testify v1.12.1
 )
 
